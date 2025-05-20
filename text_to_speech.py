@@ -1,11 +1,12 @@
 from gtts import gTTS
 import tempfile
 import os
-import playsound
+import pygame
 
 class TextToSpeech:
     def __init__(self, language='ja'):
         self.language = language
+        pygame.mixer.init()
         
     def speak(self, text):
         """テキストを音声に変換して再生"""
@@ -19,7 +20,10 @@ class TextToSpeech:
             tts.save(temp_filename)
             
             # 音声を再生
-            playsound.playsound(temp_filename)
+            pygame.mixer.music.load(temp_filename)
+            pygame.mixer.music.play()
+            while pygame.mixer.music.get_busy():
+                pygame.time.Clock().tick(10)
             
             # 一時ファイルを削除
             os.unlink(temp_filename)
