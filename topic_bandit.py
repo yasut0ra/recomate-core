@@ -68,18 +68,44 @@ class TopicBandit:
             3. 会話の継続性
             4. トピックとの関連性
             
-            評価結果を数値のみで返してください。
+            各基準の評価と総合評価を以下の形式で返してください：
+            1. 0.8 (自然さと適切さ)
+            2. 0.7 (感情表現の豊かさ)
+            3. 0.9 (会話の継続性)
+            4. 0.8 (トピックとの関連性)
+            
+            総合評価: 0.8
             """
             
             evaluation = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "あなたは会話の質を評価する専門家です。"},
+                    {"role": "system", "content": "あなたは会話の質を評価する専門家です。各基準の評価と総合評価を返してください。"},
                     {"role": "user", "content": prompt}
                 ]
             )
             
-            score = float(evaluation.choices[0].message.content.strip())
+            # 評価結果から数値のみを抽出
+            score_text = evaluation.choices[0].message.content.strip()
+            print("\n評価結果:")
+            print(score_text)
+            
+            try:
+                # 総合評価を探す
+                import re
+                match = re.search(r'総合評価:\s*(\d+\.?\d*)', score_text)
+                if match:
+                    score = float(match.group(1))
+                else:
+                    # 総合評価が見つからない場合は最初の数値を探す
+                    match = re.search(r'\d+\.?\d*', score_text)
+                    if match:
+                        score = float(match.group())
+                    else:
+                        score = 0.5  # デフォルト値
+            except ValueError:
+                score = 0.5  # デフォルト値
+            
             return max(0.0, min(1.0, score))  # 0.0から1.0の範囲に制限
             
         except Exception as e:
