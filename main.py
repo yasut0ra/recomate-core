@@ -126,25 +126,23 @@ class VtuberAI:
         self.is_listening = False
         
     def text_to_speech(self, text):
+        """テキストを音声に変換して再生"""
         try:
-            # 一時ファイルを作成
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as temp_file:
-                temp_filename = temp_file.name
+            # 音声パラメータを設定（必要に応じて調整可能）
+            self.tts.set_voice_parameters(
+                speed_scale=1.0,      # 話速
+                volume_scale=1.0,     # 音量
+                pre_phoneme_length=0.1,  # 音の前の無音時間
+                post_phoneme_length=0.1  # 音の後の無音時間
+            )
             
-            # テキストを音声に変換
-            tts = gTTS(text=text, lang='ja')
-            tts.save(temp_filename)
+            # 音声を生成して再生
+            self.tts.speak(text)
             
-            # 音声を再生
-            pygame.mixer.music.load(temp_filename)
-            pygame.mixer.music.play()
-            while pygame.mixer.music.get_busy():
-                pygame.time.Clock().tick(10)
-            
-            # 一時ファイルを削除
-            os.unlink(temp_filename)
         except Exception as e:
-            print(f"音声合成エラー: {e}")
+            print(f"音声生成でエラーが発生: {str(e)}")
+            # エラーが発生しても会話は継続
+            pass
         
     def start_listening(self):
         if not self.is_listening:
