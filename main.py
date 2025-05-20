@@ -10,7 +10,6 @@ import queue
 import threading
 from gtts import gTTS
 import tempfile
-import playsound
 from text_to_speech import TextToSpeech
 from vtuber_model import VtuberModel
 import random
@@ -137,7 +136,10 @@ class VtuberAI:
             tts.save(temp_filename)
             
             # 音声を再生
-            playsound.playsound(temp_filename)
+            pygame.mixer.music.load(temp_filename)
+            pygame.mixer.music.play()
+            while pygame.mixer.music.get_busy():
+                pygame.time.Clock().tick(10)
             
             # 一時ファイルを削除
             os.unlink(temp_filename)
@@ -244,21 +246,26 @@ class VtuberAI:
         3. 感情表現を豊かに使用する
         4. 会話を発展させる質問を含める
         5. サブトピックを自然に取り入れる
+        
+        応答は「VTuber:」などの余計な文字を含めないでください。
         """
         
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "あなたは親しみやすいVTuberです。"},
+                    {"role": "system", "content": "あなたは親しみやすいVTuberです。応答は「VTuber:」などの余計な文字を含めないでください。"},
                     {"role": "user", "content": prompt}
                 ]
             )
             
-            response_text = response.choices[0].message.content
+            response_text = response.choices[0].message.content.strip()
+            # 余計な文字を削除
+            response_text = response_text.replace("VTuber:", "").strip()
             
             # 応答の評価
             reward = self.bandit.evaluate_response(response_text, text)
+            print(f"応答評価スコア: {reward:.2f}")
             self.bandit.update(topic_idx, reward)
             
             # 会話履歴に追加
