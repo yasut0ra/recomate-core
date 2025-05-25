@@ -1,4 +1,4 @@
-# AI VTuber
+# RecoMate
 
 AIを搭載したVTuberシステム。音声認識、感情分析、自然な会話生成、音声合成、表情制御を組み合わせて、インタラクティブなVTuber体験を提供します。
 
@@ -21,8 +21,8 @@ AIを搭載したVTuberシステム。音声認識、感情分析、自然な会
 
 1. リポジトリをクローン
 ```bash
-git clone https://github.com/yourusername/ai-vtuber.git
-cd ai-vtuber
+git clone https://github.com/yourusername/recomate.git
+cd recomate
 ```
 
 2. 依存関係をインストール
