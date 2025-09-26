@@ -109,5 +109,14 @@ class VtuberModel:
         pygame.display.flip()
         self.clock.tick(60)
 
+    def process_audio(self, audio_data):
+        """音声データを処理してアニメーションに反映"""
+        # 音声の強さを計算
+        volume = np.abs(audio_data).mean()
+        if volume > 0.01:  # 閾値を超えた場合
+            self.mouth_open = min(1.0, volume * 10)  # 音量に応じて口の開き具合を調整
+        else:
+            self.mouth_open = 0.0
+
     def cleanup(self):
         pygame.quit() 
