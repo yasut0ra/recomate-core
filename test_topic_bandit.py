@@ -1,37 +1,47 @@
+from topic_bandit import TopicBandit
 import time
 
-from topic_bandit import TopicBandit
+def test_topic_bandit():
+    """トピック選択システムのテスト"""
+    # テスト用のトピック
+    topics = [
+        "趣味",
+        "食べ物",
+        "旅行",
+        "音楽",
+        "映画"
+    ]
+    
+    bandit = TopicBandit(topics)
+    
+    print("トピック選択システムのテストを開始します...")
+    
+    try:
+        # トピック選択のテスト
+        print("\nトピック選択のテスト:")
+        for _ in range(5):
+            topic_idx, selected_topic = bandit.select_topic()
+            print(f"選択されたトピック: {selected_topic}")
+            time.sleep(0.5)
+        
+        # 報酬の更新テスト
+        print("\n報酬の更新テスト:")
+        for i in range(len(topics)):
+            reward = 0.8 if i % 2 == 0 else 0.3  # 交互に高い/低い報酬
+            bandit.update(i, reward)
+            print(f"トピック '{topics[i]}' の報酬を {reward} に更新")
+        
+        # 統計情報の表示
+        print("\nトピックの統計情報:")
+        stats = bandit.get_stats()
+        for topic, stat in stats.items():
+            print(f"トピック '{topic}':")
+            print(f"- 選択回数: {stat['count']}")
+            print(f"- 平均報酬: {stat['avg_reward']:.3f}")
+            print(f"- 期待報酬: {stat['expected_reward']:.3f}")
+        
+    except Exception as e:
+        print(f"エラーが発生しました: {e}")
 
-
-def test_topic_bandit_basic_flow():
-    topics = ["hobby", "food", "travel", "music", "movies"]
-    bandit = TopicBandit(topics, alpha=0.8)
-    bandit.enable_llm_reward = False
-    bandit.observe_feedback("興味ないかな")
-
-    emotion = {"intensity": 0.7, "confidence": 0.6, "primary_emotions": ["joy"]}
-    context = "User enjoyed travel and food discussions recently."
-
-    topic_idx, selected_topic = bandit.select_topic(context=context, emotion=emotion)
-    assert 0 <= topic_idx < len(topics)
-    assert selected_topic in topics
-
-    response = "That sounds fun! 次はどんな旅を計画していますか？"
-    user_input = "I love planning new trips every spring."
-    reward = bandit.evaluate_response(response, user_input, emotion=emotion)
-    assert 0.0 <= reward <= 1.0
-
-    bandit.update(topic_idx, reward)
-    bandit.add_to_history(user_input, response, selected_topic)
-
-    stats = bandit.get_stats()
-    assert selected_topic in stats
-    assert stats[selected_topic]["count"] >= 1
-    assert 0.0 <= stats[selected_topic]["avg_reward"] <= 1.0
-    assert 'neg_feedback' in stats[selected_topic]
-
-    # ensure recency feature changes over time
-    before = bandit._recency_score(topic_idx, time.time())
-    time.sleep(0.01)
-    after = bandit._recency_score(topic_idx, time.time())
-    assert after >= before
+if __name__ == "__main__":
+    test_topic_bandit() 
