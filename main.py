@@ -432,6 +432,62 @@ class VtuberAI:
             context += f"VTuber: {entry['response']}\n"
         return context
 
+    def start(self):
+        """Vtuber AIを開始"""
+        print("Vtuber AIを開始します...")
+        
+        # スレッドを開始
+        self.recognition_thread.start()
+        self.animation_thread.start()
+        
+        # メインループ
+        try:
+            while self.is_running:
+                # モデルの描画
+                self.model.render()
+                
+                # イベント処理
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        self.is_running = False
+                    elif event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_ESCAPE:
+                            self.is_running = False
+        finally:
+            self.cleanup()
+
+    def cleanup(self):
+        self.stop_listening()
+        if self.audio_stream is not None:
+            try:
+                self.audio_stream.stop()
+                self.audio_stream.close()
+            except Exception as e:
+                print(f"オーディオストリームのクリーンアップエラー: {e}")
+        
+        print("クリーンアップ完了")
+
+    def record_audio(self):
+        """音声を録音してキューに追加"""
+        def audio_callback(indata, frames, time, status):
+            if status:
+                print(f"録音エラー: {status}")
+            self.audio_queue.put(indata.copy())
+        
+        with sd.InputStream(samplerate=self.sample_rate, channels=1,
+                          dtype=np.float32, callback=audio_callback):
+            print("録音を開始します...")
+            while self.is_running:
+                time.sleep(0.1)
+    
+    def process_audio_from_stream(self):
+        """録音された音声を処理"""
+        while self.is_running:
+            if not self.audio_queue.empty():
+                audio_data = self.audio_queue.get()
+                # 音声データを処理
+                self.model.process_audio(audio_data)
+
 if __name__ == "__main__":
     vtuber = VtuberAI()
     vtuber.start()
