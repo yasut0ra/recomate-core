@@ -14,8 +14,6 @@ from text_to_speech import TextToSpeech
 from vtuber_model import VtuberModel
 import random
 import soundfile as sf
-import re
-import textwrap
 from topic_bandit import TopicBandit
 from emotion_analyzer import EmotionAnalyzer
 
@@ -214,155 +212,214 @@ class VtuberAI:
             return "surprised"
         return "neutral"
 
-
     def _generate_response(self, text, emotion):
         """テキストから応答を生成"""
+        # 感情分析
         emotion_data = self.emotion_analyzer.analyze_emotion(text)
-        self.bandit.observe_feedback(text)
-
-        context = self._get_conversation_context()
-        topic_idx, selected_topic = self.bandit.select_topic(context=context, emotion=emotion_data)
+        
+        # トピックを選択
+        topic_idx, selected_topic = self.bandit.select_topic(context=self._get_conversation_context())
         self.current_topic = selected_topic
-
+        
+        # サブトピックを生成
         subtopics = self.bandit.generate_subtopics(selected_topic)
-
-        prompt = textwrap.dedent(f"""
+        
+        # プロンプトの作成
+        prompt = f"""
         トピック「{selected_topic}」について、以下のユーザーの発言に対して応答してください。
-
-        ユーザーの感情状態:
-        - 主要な感情: {', '.join(emotion_data['primary_emotions'])}
-        - 感情の強度: {emotion_data['intensity']}
-        - 感情の組み合わせ: {emotion_data['emotion_combination']}
-
-        関連するサブトピック:
+        
+        ユーザーの感情状態：
+        - 主要な感情：{', '.join(emotion_data['primary_emotions'])}
+        - 感情の強度：{emotion_data['intensity']}
+        - 感情の組み合わせ：{emotion_data['emotion_combination']}
+        
+        関連するサブトピック：
         {', '.join(subtopics)}
-
-        ユーザーの発言: {text}
-
-        以下の点に注意して応答してください。
+        
+        ユーザーの発言：{text}
+        
+        以下の点に注意して応答してください：
         1. ユーザーの感情状態に共感する
         2. 自然な会話の流れを維持する
         3. 感情表現を豊かに使用する
         4. 会話を発展させる質問を含める
         5. サブトピックを自然に取り入れる
-        6. 返答は2文以内にまとめ、質問は1つまでにする
-        7. ユーザーが話題変更を望む場合は滑らかにピボットする
-        """).strip()
-
+        
+        応答は「VTuber:」などの余計な文字を含めないでください。
+        """
+        
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "あなたは親しみやすいVTuberです。応答に余計な接頭辞は含めないでください。"},
-                    {"role": "user", "content": prompt},
-                ],
+                    {"role": "system", "content": "あなたは親しみやすいVTuberです。応答は「VTuber:」などの余計な文字を含めないでください。"},
+                    {"role": "user", "content": prompt}
+                ]
             )
-
+            
             response_text = response.choices[0].message.content.strip()
+            # 余計な文字を削除
             response_text = response_text.replace("VTuber:", "").strip()
-            response_text = self._polish_response(response_text)
-
-            reward = self.bandit.evaluate_response(response_text, text, emotion=emotion_data)
+            
+            # 応答の評価
+            reward = self.bandit.evaluate_response(response_text, text)
             print(f"応答評価スコア: {reward:.2f}")
             self.bandit.update(topic_idx, reward)
-
+            
+            # 会話履歴に追加
             self.bandit.add_to_history(text, response_text, selected_topic)
-
+            
+            # 感情表現を適用
             emotion_expression = self.emotion_analyzer.get_emotion_expression(emotion_data)
             self.model.update_expression(emotion_expression)
-
+            
             return response_text
-
+            
         except Exception as e:
             print(f"エラーが発生しました: {e}")
             return "すみません、応答を生成できませんでした。"
 
+    def process_audio(self):
+        if self.audio_stream is None:
+            return np.zeros(1024)
+        try:
+            data, overflowed = self.audio_stream.read(1024)
+            if overflowed:
+                print("オーディオバッファのオーバーフロー")
+            # 音声の強さを計算
+            volume = np.abs(data).mean()
+            if volume > 0.01:  # この閾値は環境に応じて調整してください
+                print(f"音声入力検出: {volume:.4f}")
+            return data
+        except Exception as e:
+            print(f"音声処理エラー: {e}")
+            return np.zeros(1024)
+
+    def start(self):
+        """Vtuber AIを開始"""
+        print("Vtuber AIを開始します...")
+        
+        # スレッドを開始
+        self.recognition_thread.start()
+        self.animation_thread.start()
+        
+        # メインループ
+        try:
+            while self.is_running:
+                # モデルの描画
+                self.model.render()
+                
+                # イベント処理
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        self.is_running = False
+                    elif event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_ESCAPE:
+                            self.is_running = False
+        finally:
+            self.cleanup()
+
+    def cleanup(self):
+        self.stop_listening()
+        if self.audio_stream is not None:
+            try:
+                self.audio_stream.stop()
+                self.audio_stream.close()
+            except Exception as e:
+                print(f"オーディオストリームのクリーンアップエラー: {e}")
+        
+        print("クリーンアップ完了")
+
+    def record_audio(self):
+        """音声を録音してキューに追加"""
+        def audio_callback(indata, frames, time, status):
+            if status:
+                print(f"録音エラー: {status}")
+            self.audio_queue.put(indata.copy())
+        
+        with sd.InputStream(samplerate=self.sample_rate, channels=1,
+                          dtype=np.float32, callback=audio_callback):
+            print("録音を開始します...")
+            while self.is_running:
+                time.sleep(0.1)
+    
+    def process_audio_from_stream(self):
+        """録音された音声を処理"""
+        while self.is_running:
+            if not self.audio_queue.empty():
+                audio_data = self.audio_queue.get()
+                # 音声データを処理
+                self.model.process_audio(audio_data)
+    
     def generate_response(self, user_input):
         """ユーザーの入力に対する応答を生成"""
+        # 感情分析
         emotion_data = self.emotion_analyzer.analyze_emotion(user_input)
         self.emotion_history.append(emotion_data)
-
+        
+        # 感情表現の生成
         emotion_expression = self.emotion_analyzer.get_emotion_expression(emotion_data)
-        self.bandit.observe_feedback(user_input)
-
+        
+        # 会話の文脈を取得
         context = self._get_conversation_context()
-
-        topic_idx, selected_topic = self.bandit.select_topic(context=context, emotion=emotion_data)
+        
+        # トピックを選択
+        topic_idx, selected_topic = self.bandit.select_topic(context=context)
         self.current_topic = selected_topic
-
+        
+        # サブトピックを生成
         subtopics = self.bandit.generate_subtopics(selected_topic)
-
-        prompt = textwrap.dedent(f"""
+        
+        # プロンプトの作成
+        prompt = f"""
         トピック「{selected_topic}」について、以下のユーザーの発言に対して応答してください。
-
-        ユーザーの感情状態:
-        - 主要な感情: {', '.join(emotion_data['primary_emotions'])}
-        - 感情の強度: {emotion_data['intensity']}
-        - 感情の組み合わせ: {emotion_data['emotion_combination']}
-        - 感情の変化: {emotion_data['emotion_change']}
-
-        関連するサブトピック:
+        
+        ユーザーの感情状態：
+        - 主要な感情：{', '.join(emotion_data['primary_emotions'])}
+        - 感情の強度：{emotion_data['intensity']}
+        - 感情の組み合わせ：{emotion_data['emotion_combination']}
+        - 感情の変化：{emotion_data['emotion_change']}
+        
+        関連するサブトピック：
         {', '.join(subtopics)}
-
-        ユーザーの発言: {user_input}
-
-        以下の点に注意して応答してください。
+        
+        ユーザーの発言：{user_input}
+        
+        以下の点に注意して応答してください：
         1. ユーザーの感情状態に共感する
         2. 自然な会話の流れを維持する
         3. 感情表現を豊かに使用する
         4. 会話を発展させる質問を含める
         5. サブトピックを自然に取り入れる
-        6. 返答は2文以内にまとめ、質問は1つまでにする
-        7. ユーザーが話題変更を望む場合は滑らかにピボットする
-        """).strip()
-
+        """
+        
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "あなたは親しみやすいVTuberです。応答に余計な接頭辞は含めないでください。"},
-                    {"role": "user", "content": prompt},
-                ],
+                    {"role": "system", "content": "あなたは親しみやすいVTuberです。"},
+                    {"role": "user", "content": prompt}
+                ]
             )
-
-            response_text = response.choices[0].message.content.strip()
-            response_text = response_text.replace("VTuber:", "").strip()
-            response_text = self._polish_response(response_text)
-
-            reward = self.bandit.evaluate_response(response_text, user_input, emotion=emotion_data)
+            
+            response_text = response.choices[0].message.content
+            
+            # 応答の評価
+            reward = self.bandit.evaluate_response(response_text, user_input)
             self.bandit.update(topic_idx, reward)
-
+            
+            # 会話履歴に追加
             self.bandit.add_to_history(user_input, response_text, selected_topic)
-
+            
+            # 感情表現を適用
             self.model.update_expression(emotion_expression)
-
+            
             return response_text
-
+            
         except Exception as e:
             print(f"エラーが発生しました: {e}")
             return "すみません、応答を生成できませんでした。"
-
-    def _polish_response(self, text: str) -> str:
-        if not text:
-            return ""
-        sentences = [s.strip() for s in re.split(r'(?<=[。！？!?])\s*', text.strip()) if s.strip()]
-        if not sentences:
-            return text.strip()
-        trimmed = sentences[:2]
-        joined = ' '.join(trimmed)
-        result_chars = []
-        question_count = 0
-        for ch in joined:
-            if ch in ('?', '？'):
-                question_count += 1
-                if question_count > 1:
-                    result_chars.append('。')
-                    continue
-            result_chars.append(ch)
-        result = ''.join(result_chars).strip()
-        result = re.sub(r'\s+', ' ', result)
-        return result if result else text.strip()
-
+    
     def _get_conversation_context(self):
         """最近の会話履歴から文脈を取得"""
         recent_history = self.bandit.conversation_history[-3:]  # 直近3つの会話を取得
