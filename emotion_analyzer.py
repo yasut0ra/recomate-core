@@ -1,165 +1,184 @@
-import openai
-from typing import Dict, List, Tuple
-import numpy as np
-from dotenv import load_dotenv
 import os
+import re
+from typing import Dict, List
+
+import openai
+from dotenv import load_dotenv
+
 
 class EmotionAnalyzer:
-    def __init__(self):
-        # 環境変数の読み込み
+    def __init__(self, model: str | None = None):
         load_dotenv()
-        openai.api_key = os.getenv('OPENAI_API_KEY')
-        
-        # 基本感情の定義
+        openai.api_key = os.getenv("OPENAI_API_KEY")
+        self.model = model or os.getenv("OPENAI_CHAT_COMPLETION_MODEL", "gpt-3.5-turbo")
+
         self.base_emotions = [
-            "喜び", "悲しみ", "怒り", "驚き", "恐れ", "嫌悪", "期待", "信頼"
+            "喜び",
+            "悲しみ",
+            "怒り",
+            "驚き",
+            "恐れ",
+            "嫌悪",
+            "期待",
+            "信頼",
         ]
-        
-        # 感情の強度レベル
+
         self.intensity_levels = ["弱い", "中程度", "強い"]
-        
-        # 感情の組み合わせパターン
+
         self.emotion_combinations = [
             "喜びと期待",
             "悲しみと恐れ",
             "怒りと嫌悪",
             "驚きと喜び",
-            "信頼と期待"
+            "信頼と期待",
         ]
-    
+
     def analyze_emotion(self, text: str) -> Dict:
-        """テキストから感情を分析"""
+        """LLM を用いてテキストの感情を推定する。"""
+        if not text.strip():
+            return self._get_default_emotion()
+
+        prompt = f"""
+        以下の発話から感情を分析してください。
+
+        発話: {text}
+
+        次の形式で結果を出力してください。
+        1. 主要な感情: (最大 3 つ、読点区切り)
+        2. 感情の強度: (0.0-1.0)
+        3. 感情の組み合わせ: (該当しない場合は「なし」)
+        4. 感情の変化: (例: 上昇/低下/安定)
+        5. 感情の要因: (短く理由を説明)
+        6. 信頼度: (0.0-1.0)
+        """
+
         try:
-            prompt = f"""
-            以下のテキストから感情を分析してください：
-            
-            テキスト：{text}
-            
-            以下の形式で分析結果を返してください：
-            1. 主要な感情（複数可）
-            2. 感情の強度（0.0-1.0）
-            3. 感情の組み合わせ
-            4. 感情の変化（もしあれば）
-            5. 感情の理由
-            
-            分析は以下の点に注意してください：
-            - 文脈を考慮する
-            - 暗黙的な感情も考慮する
-            - 文化的な要素も考慮する
-            - 感情の複雑さを捉える
-            """
-            
             response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
+                model=self.model,
                 messages=[
-                    {"role": "system", "content": "あなたは感情分析の専門家です。"},
-                    {"role": "user", "content": prompt}
-                ]
+                    {
+                        "role": "system",
+                        "content": "あなたは日本語の感情分析を行う専門家です。指定フォーマットで簡潔に回答してください。",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
             )
-            
             analysis = response.choices[0].message.content
-            
-            # 分析結果を構造化
             return self._parse_analysis(analysis)
-            
-        except Exception as e:
-            print(f"感情分析でエラーが発生: {e}")
+        except Exception as exc:  # noqa: BLE001 - keep broad to ensure graceful fallback
+            print(f"感情分析でエラーが発生しました: {exc}")
             return self._get_default_emotion()
-    
+
     def _parse_analysis(self, analysis: str) -> Dict:
-        """分析結果を構造化された形式に変換"""
-        try:
-            # 分析結果を行ごとに分割
-            lines = analysis.strip().split('\n')
-            
-            # 結果を格納する辞書
-            result = {
-                'primary_emotions': [],
-                'intensity': 0.5,
-                'emotion_combination': '中立',
-                'emotion_change': 'なし',
-                'reason': '',
-                'confidence': 0.0
-            }
-            
-            # 各行を解析
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
-                    
-                if '1.' in line or '主要な感情' in line:
-                    emotions = line.split('：')[-1].strip()
-                    result['primary_emotions'] = [e.strip() for e in emotions.split('、')]
-                elif '2.' in line or '感情の強度' in line:
-                    try:
-                        intensity = line.split('：')[-1].strip()
-                        result['intensity'] = float(intensity)
-                    except:
-                        result['intensity'] = 0.5
-                elif '3.' in line or '感情の組み合わせ' in line:
-                    result['emotion_combination'] = line.split('：')[-1].strip()
-                elif '4.' in line or '感情の変化' in line:
-                    result['emotion_change'] = line.split('：')[-1].strip()
-                elif '5.' in line or '感情の理由' in line:
-                    result['reason'] = line.split('：')[-1].strip()
-            
-            # 信頼度の計算（感情の数と強度に基づく）
-            result['confidence'] = min(1.0, len(result['primary_emotions']) * 0.2 + result['intensity'] * 0.5)
-            
-            return result
-            
-        except Exception as e:
-            print(f"分析結果の解析でエラーが発生: {e}")
-            return self._get_default_emotion()
-    
-    def _get_default_emotion(self) -> Dict:
-        """デフォルトの感情状態を返す"""
-        return {
-            'primary_emotions': ['中立'],
-            'intensity': 0.5,
-            'emotion_combination': '中立',
-            'emotion_change': 'なし',
-            'reason': '感情分析ができませんでした',
-            'confidence': 0.0
+        result = {
+            "primary_emotions": [],
+            "intensity": 0.5,
+            "emotion_combination": "なし",
+            "emotion_change": "不明",
+            "reason": "",
+            "confidence": 0.5,
         }
-    
-    def get_emotion_expression(self, emotion_data: Dict) -> str:
-        """感情データに基づいて表現を生成"""
+
+        if not analysis:
+            return result
+
+        for line in analysis.strip().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+
+            value = self._extract_value(line)
+
+            if "主要な感情" in line or re.match(r"^\s*1[\.．・)]", line):
+                result["primary_emotions"] = self._split_list(value)
+            elif "感情の強度" in line or re.match(r"^\s*2[\.．・)]", line):
+                result["intensity"] = self._extract_float(value, default=0.5)
+            elif "感情の組み合わせ" in line or re.match(r"^\s*3[\.．・)]", line):
+                result["emotion_combination"] = value or "なし"
+            elif "感情の変化" in line or re.match(r"^\s*4[\.．・)]", line):
+                result["emotion_change"] = value or "不明"
+            elif "感情の要因" in line or re.match(r"^\s*5[\.．・)]", line):
+                result["reason"] = value
+            elif "信頼度" in line or re.match(r"^\s*6[\.．・)]", line):
+                result["confidence"] = self._extract_float(value, default=0.5)
+
+        if not result["primary_emotions"]:
+            result["primary_emotions"] = ["中立"]
+
+        result["intensity"] = max(0.0, min(1.0, result["intensity"]))
+        result["confidence"] = max(0.0, min(1.0, result["confidence"]))
+
+        return result
+
+    def _extract_value(self, line: str) -> str:
+        cleaned = re.sub(r"^\s*\d+\s*[\.．・\)]?", "", line).strip()
+        if "：" in cleaned:
+            _, _, remainder = cleaned.partition("：")
+        elif ":" in cleaned:
+            _, _, remainder = cleaned.partition(":")
+        else:
+            remainder = cleaned
+        return remainder.strip()
+
+    def _split_list(self, value: str) -> List[str]:
+        if not value:
+            return []
+        parts = re.split(r"[、,]\s*", value)
+        return [part for part in (p.strip() for p in parts) if part]
+
+    def _extract_float(self, value: str, default: float) -> float:
+        match = re.search(r"-?\d+(?:\.\d+)?", value)
+        if not match:
+            return default
         try:
-            prompt = f"""
-            以下の感情データに基づいて、VTuberの表現を生成してください：
-            
-            主要な感情：{', '.join(emotion_data['primary_emotions'])}
-            感情の強度：{emotion_data['intensity']}
-            感情の組み合わせ：{emotion_data['emotion_combination']}
-            感情の変化：{emotion_data['emotion_change']}
-            
-            以下の形式で表現を返してください：
-            1. 表情の説明
-            2. 声の調子
-            3. 体の動き
-            4. 感情表現の強さ（0.0-1.0）
-            """
-            
+            return float(match.group())
+        except ValueError:
+            return default
+
+    def get_emotion_expression(self, emotion_data: Dict) -> str:
+        prompt = f"""
+        以下の感情情報をもとに、VTuber の演技指針を短く提案してください。
+
+        主要な感情: {', '.join(emotion_data.get('primary_emotions', []))}
+        感情の強度: {emotion_data.get('intensity', 0.5)}
+        感情の組み合わせ: {emotion_data.get('emotion_combination', 'なし')}
+        感情の変化: {emotion_data.get('emotion_change', '不明')}
+
+        次の形式で日本語で回答してください。
+        1. 表情
+        2. 声の調子
+        3. 体の動き
+        4. 感情表現の強さ (0.0-1.0)
+        """
+
+        try:
             response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
+                model=self.model,
                 messages=[
-                    {"role": "system", "content": "あなたはVTuberの表現を生成する専門家です。"},
-                    {"role": "user", "content": prompt}
-                ]
+                    {
+                        "role": "system",
+                        "content": "あなたは VTuber の演技指導を行う専門家です。指示は簡潔にしてください。",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
             )
-            
             return response.choices[0].message.content
-            
-        except Exception as e:
-            print(f"感情表現の生成でエラーが発生: {e}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"感情表現の生成でエラーが発生しました: {exc}")
             return "通常の表情"
-    
+
     def get_emotion_history(self, text_history: List[str]) -> List[Dict]:
-        """会話履歴から感情の変化を分析"""
-        emotions = []
+        emotions: List[Dict] = []
         for text in text_history:
-            emotion = self.analyze_emotion(text)
-            emotions.append(emotion)
-        return emotions 
+            emotions.append(self.analyze_emotion(text))
+        return emotions
+
+    def _get_default_emotion(self) -> Dict:
+        return {
+            "primary_emotions": ["中立"],
+            "intensity": 0.5,
+            "emotion_combination": "なし",
+            "emotion_change": "不明",
+            "reason": "感情分析を実行できませんでした。",
+            "confidence": 0.0,
+        }
