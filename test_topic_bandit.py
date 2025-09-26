@@ -7,6 +7,7 @@ def test_topic_bandit_basic_flow():
     topics = ["hobby", "food", "travel", "music", "movies"]
     bandit = TopicBandit(topics, alpha=0.8)
     bandit.enable_llm_reward = False
+    bandit.observe_feedback("興味ないかな")
 
     emotion = {"intensity": 0.7, "confidence": 0.6, "primary_emotions": ["joy"]}
     context = "User enjoyed travel and food discussions recently."
@@ -27,6 +28,7 @@ def test_topic_bandit_basic_flow():
     assert selected_topic in stats
     assert stats[selected_topic]["count"] >= 1
     assert 0.0 <= stats[selected_topic]["avg_reward"] <= 1.0
+    assert 'neg_feedback' in stats[selected_topic]
 
     # ensure recency feature changes over time
     before = bandit._recency_score(topic_idx, time.time())
