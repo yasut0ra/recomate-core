@@ -1,0 +1,56 @@
+﻿VTuber AI System Specification
+=============================
+
+Overview
+--------
+- Desktop voice dialogue application combining microphone input, LLM-based text generation, VOICEVOX text-to-speech, and Pygame rendering.
+- Core controller is `VtuberAI` (main.py) orchestrating audio capture, speech recognition, emotion analysis, topic selection, response generation, and avatar updates.
+- Topic selection uses a contextual LinUCB bandit enhanced with heuristics for negative feedback and pivot pressure.
+
+High-Level Flow
+---------------
+1. User speech is captured via `sounddevice` and transcribed by `speech_recognition` (Google backend).
+2. Emotion analysis (`EmotionAnalyzer`) runs on the user utterance via OpenAI ChatCompletion.
+3. Feedback signals (negativity, pivot intent) are registered in `TopicBandit.observe_feedback`.
+4. `TopicBandit.select_topic` builds an 8-dimensional feature vector (intensity, confidence, recency, novelty, context match, negative score, pivot pressure) and applies LinUCB to choose a topic.
+5. Response prompt is assembled with topic, subtopics, and emotion context and sent to OpenAI ChatCompletion for generation.
+6. Generated response is post-processed (`_polish_response`) to enforce two sentences maximum and a single question, then evaluated (`TopicBandit.evaluate_response`) and the bandit is updated with the observed reward.
+7. VOICEVOX synthesizes the response audio; Pygame avatar updates expression and renders the frame; conversation history is persisted.
+
+Key Modules
+-----------
+- `main.py`
+  - `VtuberAI`: manages setup, main loop (`start`), cleanup, speech recognition thread, animation thread, emotion rule-of-thumb fallback, and response generation pipeline.
+  - `_generate_response` / `generate_response`: shared logic for prompt construction, LLM call, reward evaluation, bandit update, emotion-driven avatar changes, and TTS output.
+  - `_polish_response`: trims responses to <=2 sentences and <=1 question.
+  - `_get_conversation_context`: aggregates last three exchanges for prompt context.
+- `topic_bandit.py`
+  - `LinUCBBandit`: linear UCB implementation with safe solving (`np.linalg.solve` fallback to pseudo-inverse).
+  - `TopicBandit`: encapsulates topic selection, feedback observation, response evaluation, feature construction, and history logging (counts, rewards, negative feedback, response metadata).
+- `emotion_analyzer.py`
+  - Uses OpenAI ChatCompletion for multi-field emotion extraction (primary emotions, intensity, combination, change, reason, confidence).
+  - Provides expression guidance for the avatar; falls back to defaults on errors.
+- `text_to_speech.py`
+  - Wraps VOICEVOX HTTP API with caching, pygame mixer playback, and parameter controls.
+- `vtuber_model.py`
+  - Pygame avatar renderer handling expressions, mouth animation, blinking, and cleanup.
+
+Configuration and Dependencies
+------------------------------
+- Environment variables via `.env`: `OPENAI_API_KEY`, optional `OPENAI_CHAT_COMPLETION_MODEL`, and `USE_LLM_REWARD` toggle.
+- External services: OpenAI ChatCompletion API, local VOICEVOX server (`http://localhost:50021`).
+- Python packages: openai, pygame, sounddevice, speech_recognition, numpy, requests, dotenv, gtts, soundfile, etc.
+
+Error Handling
+--------------
+- VOICEVOX/OpenAI calls wrapped in try/except with console logging and graceful fallbacks.
+- Audio stream and thread operations guarded to prevent crashes during teardown.
+
+Testing
+-------
+- `test_topic_bandit.py` runs a LinUCB selection/evaluation/update smoke test with heuristic rewards and negative feedback injection. Other components rely on manual or integration testing due to hardware/UI dependencies.
+
+Operational Notes
+-----------------
+- Requires microphone input, VOICEVOX server running locally, and a display for the Pygame window.
+- Conversation history and bandit stats are kept in memory; persistence can be added if longer sessions are required.
